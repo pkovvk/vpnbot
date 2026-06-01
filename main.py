@@ -39,9 +39,12 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
 
     # Middlewares (порядок важен!)
-    dp.update.middleware(DbSessionMiddleware())
-    dp.update.middleware(UserMiddleware())
-    dp.update.middleware(BanMiddleware())
+    dp.message.middleware(DbSessionMiddleware())
+    dp.callback_query.middleware(DbSessionMiddleware())
+    dp.message.middleware(UserMiddleware())
+    dp.callback_query.middleware(UserMiddleware())
+    dp.message.middleware(BanMiddleware())
+    dp.callback_query.middleware(BanMiddleware())
 
     # Роутеры
     dp.include_router(main_router)
