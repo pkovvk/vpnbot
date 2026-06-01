@@ -1,21 +1,15 @@
 """
-Сервис для работы с 3x-ui API через библиотеку py3xui.
-
-Архитектура поддерживает несколько узлов (nodes):
-- Каждый XUIClient работает с одним сервером
-- XUIManager управляет всеми узлами
-- При добавлении нового узла достаточно добавить его данные в БД/конфиг
-  и создать новый XUIClient — весь остальной код менять не нужно.
+Сервис для работы с 3x-ui API.
+Использует актуальный API (/panel/api/clients/*) с Bearer токеном.
 """
 
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 import logging
 
-from py3xui import AsyncApi
-from py3xui.client.client import Client
+import httpx
 
 from config import settings
 
@@ -23,154 +17,114 @@ logger = logging.getLogger(__name__)
 
 
 class XUINode:
-    """Обёртка над AsyncApi для одного узла."""
+    """HTTP клиент для одного узла 3x-ui."""
 
     def __init__(
         self,
         host: str,
-        username: str,
-        password: str,
         token: str,
         inbound_id: int,
         node_name: str = "main",
     ):
-        self.host = host
+        self.host = host.rstrip("/")
+        self.token = token
         self.inbound_id = inbound_id
         self.node_name = node_name
-        self.api = AsyncApi(
-            host=host,
-            username=username,
-            password=password,
-            token=token,
-            logger=logging.getLogger(f"xui_{node_name}"),
-        )
+
+    def _headers(self) -> dict:
+        return {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+        }
+
+    async def _post(self, endpoint: str, json: dict) -> dict:
+        url = f"{self.host}/{endpoint}"
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=15) as http:
+                resp = await http.post(url, headers=self._headers(), json=json)
+                return resp.json()
+        except Exception as e:
+            logger.error(f"[{self.node_name}] POST {endpoint} error: {e}")
+            return {"success": False, "msg": str(e)}
+
+    async def _get(self, endpoint: str) -> dict:
+        url = f"{self.host}/{endpoint}"
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=15) as http:
+                resp = await http.get(url, headers=self._headers())
+                return resp.json()
+        except Exception as e:
+            logger.error(f"[{self.node_name}] GET {endpoint} error: {e}")
+            return {"success": False, "msg": str(e)}
 
     async def login(self) -> bool:
-        try:
-            await self.api.login()
-        except Exception as e:
-            if "No need to login" in str(e):
-                logger.info(f"[{self.node_name}] Using token auth, login skipped.")
-                return True
-            logger.error(f"[{self.node_name}] Login error: {e}")
-            return False
-        return True
+        """Проверяем доступность API."""
+        result = await self._get("panel/api/clients/list")
+        return result.get("success", False)
 
     async def add_client(self, email: str, expires_at: datetime, limit_ip: int = 1) -> tuple[bool, str]:
-        client_id = str(uuid.uuid4())
         expires_ms = int(expires_at.timestamp() * 1000)
+        result = await self._post("panel/api/clients/add", {
+            "client": {
+                "email": email,
+                "expiryTime": expires_ms,
+                "limitIp": limit_ip,
+                "totalGB": 0,
+                "enable": True,
+            },
+            "inboundIds": [self.inbound_id],
+        })
 
-        client = Client(
-            id=client_id,
-            email=email,
-            limit_ip=limit_ip,
-            total_gb=0,
-            expiry_time=expires_ms,
-            enable=True,
-            flow="",
-        )
+        if result.get("success"):
+            # Получаем UUID созданного клиента
+            client_data = await self._get(f"panel/api/clients/get/{email}")
+            if client_data.get("success"):
+                obj = client_data.get("obj", {})
+                client_id = obj.get("id") or obj.get("uuid", "")
+                return True, client_id
+            return True, ""
 
-        try:
-            await self.api.client.add(self.inbound_id, [client])
-            return True, client_id
-        except Exception as e:
-            logger.error(f"[{self.node_name}] Add client error: {e}")
-            return False, ""
+        logger.error(f"[{self.node_name}] Add client failed: {result.get('msg')}")
+        return False, ""
 
     async def update_client_expiry(self, client_id: str, email: str, expires_at: datetime) -> bool:
         expires_ms = int(expires_at.timestamp() * 1000)
-        client = Client(
-            id=client_id,
-            email=email,
-            expiry_time=expires_ms,
-            enable=True,
-            flow="",
-        )
-        try:
-            await self.api.client.update(client_id, client)
-            return True
-        except Exception as e:
-            logger.error(f"[{self.node_name}] Update client error: {e}")
-            return False
+        result = await self._post(f"panel/api/clients/update/{email}", {
+            "email": email,
+            "expiryTime": expires_ms,
+            "enable": True,
+        })
+        return result.get("success", False)
 
     async def toggle_client(self, client_id: str, email: str, enable: bool) -> bool:
-        client = Client(
-            id=client_id,
-            email=email,
-            enable=enable,
-            flow="",
-        )
-        try:
-            await self.api.client.update(client_id, client)
-            return True
-        except Exception as e:
-            logger.error(f"[{self.node_name}] Toggle client error: {e}")
-            return False
+        result = await self._post(f"panel/api/clients/update/{email}", {
+            "email": email,
+            "enable": enable,
+        })
+        return result.get("success", False)
 
-    async def delete_client(self, client_id: str) -> bool:
-        try:
-            await self.api.client.delete(self.inbound_id, client_id)
-            return True
-        except Exception as e:
-            logger.error(f"[{self.node_name}] Delete client error: {e}")
-            return False
+    async def delete_client(self, client_id: str, email: str) -> bool:
+        result = await self._post(f"panel/api/clients/del/{email}", {})
+        return result.get("success", False)
 
     async def get_client_link(self, client_id: str, email: str) -> str | None:
-        """Сформировать vless:// ссылку из настроек inbound."""
-        try:
-            inbounds = await self.api.inbound.get_list()
-            inbound = next((i for i in inbounds if i.id == self.inbound_id), None)
-            if not inbound:
-                return None
-
-            import json
-            from urllib.parse import urlparse
-
-            stream = inbound.stream_settings
-            if isinstance(stream, str):
-                stream = json.loads(stream)
-
-            network = stream.get("network", "ws")
-            security = stream.get("security", "tls")
-            ws_settings = stream.get("wsSettings", {})
-            path = ws_settings.get("path", "/")
-            host_header = ws_settings.get("headers", {}).get("Host", "")
-            tls_settings = stream.get("tlsSettings", {})
-            server_name = tls_settings.get("serverName", "")
-
-            parsed = urlparse(self.host)
-            server_host = parsed.hostname
-            port = inbound.port
-
-            link = (
-                f"vless://{client_id}@{server_host}:{port}"
-                f"?type={network}"
-                f"&security={security}"
-                f"&path={path}"
-                f"&host={host_header or server_name}"
-                f"&sni={server_name}"
-                f"#{email}"
-            )
-            return link
-        except Exception as e:
-            logger.error(f"[{self.node_name}] Build link error: {e}")
-            return None
+        """Получить ссылку подключения через API."""
+        result = await self._get(f"panel/api/clients/links/{email}")
+        if result.get("success"):
+            links = result.get("obj", [])
+            if links:
+                return links[0]
+        return None
 
     async def is_healthy(self) -> bool:
-        try:
-            await self.api.inbound.get_list()
-            return True
-        except Exception:
-            return False
+        result = await self._get("panel/api/clients/list")
+        return result.get("success", False)
 
 
 class XUIManager:
     """
     Менеджер узлов 3x-ui.
-
-    Сейчас работает с одним главным узлом.
-    Для добавления новых узлов достаточно вызвать add_node() —
-    все методы работы с клиентами автоматически применяются ко всем узлам.
+    Для добавления нового узла вызови add_node() — всё остальное работает автоматически.
     """
 
     def __init__(self):
@@ -202,30 +156,36 @@ class XUIManager:
 
         extra = {k: v for k, v in self._nodes.items() if k != "main"}
         if extra:
-            await asyncio.gather(*[n.add_client(email, expires_at) for n in extra.values()], return_exceptions=True)
+            await asyncio.gather(
+                *[n.add_client(email, expires_at) for n in extra.values()],
+                return_exceptions=True,
+            )
 
         return True, client_id
 
-    async def delete_client_all_nodes(self, client_id: str) -> bool:
+    async def delete_client_all_nodes(self, client_id: str, email: str) -> bool:
         results = await asyncio.gather(
-            *[n.delete_client(client_id) for n in self._nodes.values()], return_exceptions=True
+            *[n.delete_client(client_id, email) for n in self._nodes.values()],
+            return_exceptions=True,
         )
         return any(r is True for r in results)
 
     async def toggle_client_all_nodes(self, client_id: str, email: str, enable: bool) -> bool:
         results = await asyncio.gather(
-            *[n.toggle_client(client_id, email, enable) for n in self._nodes.values()], return_exceptions=True
+            *[n.toggle_client(client_id, email, enable) for n in self._nodes.values()],
+            return_exceptions=True,
         )
         return any(r is True for r in results)
 
     async def update_expiry_all_nodes(self, client_id: str, email: str, expires_at: datetime) -> bool:
         results = await asyncio.gather(
-            *[n.update_client_expiry(client_id, email, expires_at) for n in self._nodes.values()], return_exceptions=True
+            *[n.update_client_expiry(client_id, email, expires_at) for n in self._nodes.values()],
+            return_exceptions=True,
         )
         return all(r is True for r in results)
 
     async def close_all(self):
-        pass  # py3xui не требует явного закрытия
+        pass
 
 
 # Глобальный менеджер
@@ -235,19 +195,15 @@ xui_manager = XUIManager()
 def setup_xui():
     main_node = XUINode(
         host=settings.XUI_HOST,
-        username=settings.XUI_USERNAME,
-        password=settings.XUI_PASSWORD,
         token=settings.XUI_TOKEN,
         inbound_id=settings.XUI_INBOUND_ID,
         node_name="main",
     )
     xui_manager.add_node("main", main_node)
 
-    # ПРИМЕР добавления дополнительного узла (раскомментировать когда появится):
+    # ПРИМЕР добавления дополнительного узла:
     # node2 = XUINode(
-    #     host="https://node2.example.com:2053",
-    #     username="admin",
-    #     password="password",
+    #     host="https://node2.example.com:2053/basepath",
     #     token="token_here",
     #     inbound_id=1,
     #     node_name="node2_de",
