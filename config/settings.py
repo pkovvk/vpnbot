@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     XUI_HOST: str
     XUI_USERNAME: str
     XUI_PASSWORD: str
+    XUI_TOKEN: str = ""
     XUI_INBOUND_ID: int = 1
 
     # YooKassa
