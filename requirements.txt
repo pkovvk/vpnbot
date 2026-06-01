@@ -5,3 +5,4 @@ aiohttp==3.11.7
 pydantic-settings==2.6.1
 python-dotenv==1.0.1
 py3xui
+httpx
