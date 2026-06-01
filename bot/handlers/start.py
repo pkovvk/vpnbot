@@ -10,12 +10,12 @@ from database.models import User
 router = Router()
 
 WELCOME_TEXT = """
-👋 Добро пожаловать в <b>VPN Bot</b>!
+👋 Добро пожаловать в <b>LeftVPN</b>!
 
 🔒 Безопасный и быстрый VPN без логов и ограничений.
 
 <b>Что умеет бот:</b>
-• 🎁 Бесплатный пробный период на 7 дней
+• 🎁 Бесплатный пробный период на 3 дня
 • 💳 Удобная оплата: карта, крипта, Stars
 • 🔑 Мгновенная выдача доступа
 • 📱 Поддержка всех устройств
@@ -51,7 +51,7 @@ async def cmd_start(message: Message, db_user: User, session: AsyncSession):
 async def cmd_help(message: Message):
     await message.answer(
         "📞 <b>Поддержка</b>\n\n"
-        "По всем вопросам пишите: @your_support_username\n\n"
+        "По всем вопросам пишите: @leftvpn_support\n\n"
         "⏱ Время ответа: до 24 часов",
         parse_mode="HTML",
     )

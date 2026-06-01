@@ -16,7 +16,7 @@ from services.subscription import activate_subscription
 
 router = Router()
 
-PLAN_DAYS = {"month": 30, "trial": 7}
+PLAN_DAYS = {"month": 30, "trial": 3}
 
 
 def _get_price(plan: str, db_user: User) -> float:

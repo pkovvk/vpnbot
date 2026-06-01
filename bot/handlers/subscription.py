@@ -85,10 +85,10 @@ async def howto(callback: CallbackQuery):
 async def howto_ios(callback: CallbackQuery):
     await callback.message.edit_text(
         "📱 <b>Подключение на iOS</b>\n\n"
-        "1. Установите приложение <b>Streisand</b> из App Store\n"
+        "1. Установите приложение <b>Happ</b> из App Store\n"
         "2. Откройте бот и нажмите «Получить ссылку подключения»\n"
         "3. Скопируйте ссылку vless://...\n"
-        "4. В Streisand нажмите «+» → «Импорт из буфера обмена»\n"
+        "4. В Happ нажмите «+» → «Импорт из буфера обмена»\n"
         "5. Нажмите кнопку подключения ✅",
         parse_mode="HTML",
         reply_markup=howto_kb(),
@@ -114,9 +114,9 @@ async def howto_android(callback: CallbackQuery):
 async def howto_desktop(callback: CallbackQuery):
     await callback.message.edit_text(
         "💻 <b>Подключение на Windows / Mac</b>\n\n"
-        "1. Скачайте <b>Hiddify</b> с сайта hiddify.com\n"
+        "1. Скачайте <b>Happ</b> с сайта happ.su\n"
         "2. Получите ссылку vless:// в боте\n"
-        "3. В Hiddify нажмите «+» → вставьте ссылку\n"
+        "3. В Happ нажмите «+» → вставьте ссылку\n"
         "4. Нажмите «Подключиться»",
         parse_mode="HTML",
         reply_markup=howto_kb(),
@@ -143,7 +143,7 @@ async def show_plans(event, db_user: User, session: AsyncSession):
         "🛒 <b>Выберите тариф:</b>\n\n"
         "🔒 Протокол: VLESS + WS + TLS\n"
         "📱 Устройств: 1\n"
-        "⚡️ Скорость: без ограничений\n"
+        "⚡️ Скорость: очень высокая\n"
         "🚫 Логи: не ведутся"
     )
 
@@ -170,7 +170,7 @@ async def plan_trial(callback: CallbackQuery, db_user: User, session: AsyncSessi
 
     if ok:
         await callback.message.edit_text(
-            f"🎉 <b>Пробный период активирован на 7 дней!</b>\n\n"
+            f"🎉 <b>Пробный период активирован на 3 дня!</b>\n\n"
             f"🔗 <b>Ваша ссылка для подключения:</b>\n"
             f"<code>{link_or_err}</code>\n\n"
             f"Нажмите «🔑 Мой доступ» чтобы посмотреть инструкцию по подключению.",

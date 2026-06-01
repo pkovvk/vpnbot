@@ -3,6 +3,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
+from config import settings
 
 
 # ─── Главное меню ────────────────────────────────────────────────────────────
@@ -26,7 +27,8 @@ def subscription_plans_kb(has_used_trial: bool, has_discount: bool) -> InlineKey
             callback_data="plan_trial",
         ))
 
-    price_label = "1 месяц — 150₽ (скидка 50%)" if has_discount else "1 месяц — 299₽"
+    discounted = int(settings.PRICE_1_MONTH * (1 - settings.REFERRAL_DISCOUNT_PERCENT / 100))
+    price_label = f"1 месяц — {discounted}₽ (скидка {settings.REFERRAL_DISCOUNT_PERCENT}%)" if has_discount else f"1 месяц — {settings.PRICE_1_MONTH}₽"
     builder.row(InlineKeyboardButton(
         text=f"📅 {price_label}",
         callback_data="plan_month",
