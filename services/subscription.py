@@ -39,16 +39,13 @@ async def activate_subscription(
     user_repo = UserRepository(session)
 
     now = datetime.now(timezone.utc)
-    existing_check = await sub_repo.get_active(user_id)
-    if existing_check and existing_check.expires_at > now:
-        base_date = existing_check.expires_at.replace(tzinfo=timezone.utc)
+    existing = await sub_repo.get_active(user_id)
+    if existing and existing.expires_at.replace(tzinfo=timezone.utc) > now:
+        base_date = existing.expires_at.replace(tzinfo=timezone.utc)
     else:
         base_date = now
     expires_at = base_date + timedelta(days=plan_days)
     email = _make_xui_email(user_id)
-
-    # Проверяем, есть ли уже подписка
-    existing = await sub_repo.get_active(user_id)
 
     if existing and existing.xui_client_id:
         # Продлеваем существующую
