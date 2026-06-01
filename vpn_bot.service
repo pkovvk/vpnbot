@@ -1,0 +1,16 @@
+[Unit]
+Description=VPN Telegram Bot
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=vpnbot
+WorkingDirectory=/opt/vpn_bot
+ExecStart=/opt/vpn_bot/venv/bin/python main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
