@@ -52,7 +52,7 @@ class XUIClient:
         session = await self._get_session()
         try:
             async with session.post(
-                f"{self.host}",
+                f"{self.host}/login",
                 json={"username": self.username, "password": self.password},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
