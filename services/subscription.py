@@ -63,7 +63,8 @@ async def activate_subscription(
         return False, "Не удалось продлить в 3x-ui"
 
     # Создаём нового клиента
-    ok, client_id, sub_id = await xui_manager.create_client_all_nodes(email, expires_at)
+    total_gb = 20 if is_trial else 100
+    ok, client_id, sub_id = await xui_manager.create_client_all_nodes(email, expires_at, total_gb=total_gb)
     if not ok:
         return False, "Не удалось создать клиента в 3x-ui"
 

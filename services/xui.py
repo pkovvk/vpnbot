@@ -62,14 +62,14 @@ class XUINode:
         result = await self._get("panel/api/clients/list")
         return result.get("success", False)
 
-    async def add_client(self, email: str, expires_at: datetime, limit_ip: int = 2) -> tuple[bool, str, str]:
+    async def add_client(self, email: str, expires_at: datetime, limit_ip: int = 2, total_gb: int = 0) -> tuple[bool, str, str]:
         expires_ms = int(expires_at.timestamp() * 1000)
         result = await self._post("panel/api/clients/add", {
             "client": {
                 "email": email,
                 "expiryTime": expires_ms,
                 "limitIp": limit_ip,
-                "totalGB": 0,
+                "totalGB": total_gb * 1024 * 1024 * 1024,
                 "enable": True,
             },
             "inboundIds": [self.inbound_id],
@@ -142,11 +142,11 @@ class XUIManager:
             else:
                 logger.error(f"XUI node '{name}' connection FAILED: {result}")
 
-    async def create_client_all_nodes(self, email: str, expires_at: datetime) -> tuple[bool, str, str]:
+    async def create_client_all_nodes(self, email: str, expires_at: datetime, total_gb: int = 0) -> tuple[bool, str, str]:
         if not self._nodes:
             return False, "", ""
 
-        ok, client_id, sub_id = await self.main_node.add_client(email, expires_at)
+        ok, client_id, sub_id = await self.main_node.add_client(email, expires_at, total_gb=total_gb)
         if not ok:
             return False, "", ""
 
