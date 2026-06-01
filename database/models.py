@@ -73,6 +73,7 @@ class Subscription(Base):
     # 3x-ui данные
     xui_client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)   # UUID клиента в 3x-ui
     xui_email: Mapped[str | None] = mapped_column(String(128), nullable=True)       # email (уникальный ключ в 3x-ui)
+    xui_sub_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     xui_inbound_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Подписка

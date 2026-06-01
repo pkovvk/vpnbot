@@ -33,7 +33,7 @@ async def activate_subscription(
     """
     Активировать подписку.
     Создаёт/продлевает клиента в 3x-ui и записывает в БД.
-    Возвращает (success, vless_link | error_msg).
+    Возвращает (success, sub_link | error_msg).
     """
     sub_repo = SubscriptionRepository(session)
     user_repo = UserRepository(session)
@@ -56,16 +56,18 @@ async def activate_subscription(
             existing.notified_3days = False
             existing.notified_expired = False
             await session.commit()
-            link = await xui_manager.main_node.get_client_link(existing.xui_client_id, email)
+            link = await xui_manager.main_node.get_client_link(
+                existing.xui_client_id, email, existing.xui_sub_id or ""
+            )
             return True, link or "Подписка продлена"
         return False, "Не удалось продлить в 3x-ui"
 
     # Создаём нового клиента
-    ok, client_id = await xui_manager.create_client_all_nodes(email, expires_at)
+    ok, client_id, sub_id = await xui_manager.create_client_all_nodes(email, expires_at)
     if not ok:
         return False, "Не удалось создать клиента в 3x-ui"
 
-    # Если была старая (истёкшая) — удаляем
+    # Если была старая (истёкшая) — помечаем
     if existing:
         await sub_repo.update_status(existing.id, SubscriptionStatus.EXPIRED)
 
@@ -77,17 +79,17 @@ async def activate_subscription(
         status=status,
         xui_client_id=client_id,
         xui_email=email,
+        xui_sub_id=sub_id,
         xui_inbound_id=settings.XUI_INBOUND_ID,
     )
 
-    # Отмечаем использование триала
+    # Отмечаем использование триала и начисляем бонус рефереру
     if is_trial:
         user = await user_repo.get_by_id(user_id)
         if user:
             user.has_used_trial = True
             await session.commit()
 
-            # Начисляем бонус рефереру
             if user.referred_by_id:
                 ref_repo = ReferralRepository(session)
                 await ref_repo.add_reward(
@@ -99,7 +101,7 @@ async def activate_subscription(
                     user.referred_by_id, settings.REFERRAL_REWARD_RUB
                 )
 
-    link = await xui_manager.main_node.get_client_link(client_id, email)
+    link = await xui_manager.main_node.get_client_link(client_id, email, sub_id)
     return True, link or "Подписка активирована"
 
 
@@ -108,9 +110,7 @@ async def revoke_subscription(
     user_id: int,
     reason: str = "expired",
 ) -> bool:
-    """
-    Отозвать подписку (отключить в 3x-ui + пометить в БД).
-    """
+    """Отозвать подписку (отключить в 3x-ui + пометить в БД)."""
     sub_repo = SubscriptionRepository(session)
     sub = await sub_repo.get_active(user_id)
     if not sub:
@@ -118,7 +118,6 @@ async def revoke_subscription(
 
     email = _make_xui_email(user_id)
     if sub.xui_client_id:
-        # Отключаем (не удаляем — чтобы статистика сохранялась)
         await xui_manager.toggle_client_all_nodes(sub.xui_client_id, email, enable=False)
 
     status = SubscriptionStatus.SUSPENDED if reason == "manual" else SubscriptionStatus.EXPIRED
@@ -142,11 +141,13 @@ async def restore_subscription(session: AsyncSession, user_id: int) -> bool:
     return False
 
 
-async def get_vless_link(session: AsyncSession, user_id: int) -> str | None:
-    """Получить актуальную ссылку для подключения."""
+async def get_sub_link(session: AsyncSession, user_id: int) -> str | None:
+    """Получить актуальную ссылку подписки."""
     sub_repo = SubscriptionRepository(session)
     sub = await sub_repo.get_active(user_id)
     if not sub or not sub.xui_client_id:
         return None
     email = _make_xui_email(user_id)
-    return await xui_manager.main_node.get_client_link(sub.xui_client_id, email)
+    return await xui_manager.main_node.get_client_link(
+        sub.xui_client_id, email, sub.xui_sub_id or ""
+    )

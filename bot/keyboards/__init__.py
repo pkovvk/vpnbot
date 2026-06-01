@@ -37,10 +37,28 @@ def subscription_plans_kb(has_used_trial: bool, has_discount: bool) -> InlineKey
     return builder.as_markup()
 
 
-def payment_method_kb(plan: str) -> InlineKeyboardMarkup:
+def payment_method_kb(plan: str, balance: float = 0.0, price: float = 0.0) -> InlineKeyboardMarkup:
+    from config import settings
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="💳 ЮКасса (карта РФ)", callback_data=f"pay_yookassa_{plan}"))
-    builder.row(InlineKeyboardButton(text="₿ Криптовалюта (USDT)", callback_data=f"pay_crypto_{plan}"))
+
+    if balance > 0:
+        if balance >= price:
+            builder.row(InlineKeyboardButton(
+                text=f"💰 Оплатить с баланса ({balance:.0f}₽) — бесплатно",
+                callback_data=f"pay_balance_{plan}",
+            ))
+        else:
+            builder.row(InlineKeyboardButton(
+                text=f"💰 Частично балансом ({balance:.0f}₽ из {price:.0f}₽)",
+                callback_data=f"pay_balance_{plan}",
+            ))
+
+    if settings.YOOKASSA_SHOP_ID and settings.YOOKASSA_SECRET_KEY:
+        builder.row(InlineKeyboardButton(text="💳 ЮКасса (карта РФ)", callback_data=f"pay_yookassa_{plan}"))
+
+    if settings.CRYPTOBOT_API_TOKEN:
+        builder.row(InlineKeyboardButton(text="₿ Криптовалюта (USDT)", callback_data=f"pay_crypto_{plan}"))
+
     builder.row(InlineKeyboardButton(text="⭐ Telegram Stars", callback_data=f"pay_stars_{plan}"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_plans"))
     return builder.as_markup()

@@ -62,7 +62,7 @@ class XUINode:
         result = await self._get("panel/api/clients/list")
         return result.get("success", False)
 
-    async def add_client(self, email: str, expires_at: datetime, limit_ip: int = 1) -> tuple[bool, str]:
+    async def add_client(self, email: str, expires_at: datetime, limit_ip: int = 2) -> tuple[bool, str, str]:
         expires_ms = int(expires_at.timestamp() * 1000)
         result = await self._post("panel/api/clients/add", {
             "client": {
@@ -76,16 +76,16 @@ class XUINode:
         })
 
         if result.get("success"):
-            # Получаем UUID созданного клиента
             client_data = await self._get(f"panel/api/clients/get/{email}")
             if client_data.get("success"):
                 obj = client_data.get("obj", {})
                 client_id = obj.get("id") or obj.get("uuid", "")
-                return True, client_id
-            return True, ""
+                sub_id = obj.get("subId", "")
+                return True, client_id, sub_id
+            return True, "", ""
 
         logger.error(f"[{self.node_name}] Add client failed: {result.get('msg')}")
-        return False, ""
+        return False, "", ""
 
     async def update_client_expiry(self, client_id: str, email: str, expires_at: datetime) -> bool:
         expires_ms = int(expires_at.timestamp() * 1000)
@@ -107,13 +107,9 @@ class XUINode:
         result = await self._post(f"panel/api/clients/del/{email}", {})
         return result.get("success", False)
 
-    async def get_client_link(self, client_id: str, email: str) -> str | None:
-        """Получить ссылку подключения через API."""
-        result = await self._get(f"panel/api/clients/links/{email}")
-        if result.get("success"):
-            links = result.get("obj", [])
-            if links:
-                return links[0]
+    async def get_client_link(self, client_id: str, email: str, sub_id: str = "") -> str | None:
+        if sub_id:
+            return f"https://leftvpn.online:2096/leftsubb/{sub_id}"
         return None
 
     async def is_healthy(self) -> bool:
@@ -146,13 +142,13 @@ class XUIManager:
             else:
                 logger.error(f"XUI node '{name}' connection FAILED: {result}")
 
-    async def create_client_all_nodes(self, email: str, expires_at: datetime) -> tuple[bool, str]:
+    async def create_client_all_nodes(self, email: str, expires_at: datetime) -> tuple[bool, str, str]:
         if not self._nodes:
-            return False, ""
+            return False, "", ""
 
-        ok, client_id = await self.main_node.add_client(email, expires_at)
+        ok, client_id, sub_id = await self.main_node.add_client(email, expires_at)
         if not ok:
-            return False, ""
+            return False, "", ""
 
         extra = {k: v for k, v in self._nodes.items() if k != "main"}
         if extra:
@@ -161,7 +157,7 @@ class XUIManager:
                 return_exceptions=True,
             )
 
-        return True, client_id
+        return True, client_id, sub_id
 
     async def delete_client_all_nodes(self, client_id: str, email: str) -> bool:
         results = await asyncio.gather(

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.keyboards import subscription_plans_kb, my_access_kb, howto_kb, payment_method_kb
 from database import SubscriptionRepository
 from database.models import User
-from services.subscription import get_vless_link, activate_subscription
+from services.subscription import get_sub_link, activate_subscription
 from database.models import SubscriptionStatus
 
 router = Router()
@@ -32,7 +32,7 @@ async def my_access(message: Message, db_user: User, session: AsyncSession):
             f"{status_emoji} <b>Подписка: {status_label}</b>\n\n"
             f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y')}</b>\n"
             f"⏳ Осталось: <b>{days_left} дн.</b>\n"
-            f"📱 Устройств: <b>1</b>"
+            f"📱 Устройств: <b>2</b>"
         )
     else:
         text = (
@@ -56,7 +56,7 @@ async def back_to_access(callback: CallbackQuery, db_user: User, session: AsyncS
 
 @router.callback_query(F.data == "get_link")
 async def get_link(callback: CallbackQuery, db_user: User, session: AsyncSession):
-    link = await get_vless_link(session, db_user.id)
+    link = await get_sub_link(session, db_user.id)
     if link:
         await callback.message.answer(
             f"🔗 <b>Ваша ссылка для подключения:</b>\n\n"
@@ -87,7 +87,7 @@ async def howto_ios(callback: CallbackQuery):
         "📱 <b>Подключение на iOS</b>\n\n"
         "1. Установите приложение <b>Happ</b> из App Store\n"
         "2. Откройте бот и нажмите «Получить ссылку подключения»\n"
-        "3. Скопируйте ссылку vless://...\n"
+        "3. Скопируйте ссылку\n"
         "4. В Happ нажмите «+» → «Импорт из буфера обмена»\n"
         "5. Нажмите кнопку подключения ✅",
         parse_mode="HTML",
@@ -101,7 +101,7 @@ async def howto_android(callback: CallbackQuery):
     await callback.message.edit_text(
         "🤖 <b>Подключение на Android</b>\n\n"
         "1. Установите <b>v2rayNG</b> из Google Play\n"
-        "2. Получите ссылку vless:// в боте\n"
+        "2. Получите ссылку в боте\n"
         "3. В v2rayNG нажмите «+» → «Импорт конфигурации из буфера обмена»\n"
         "4. Выберите добавленный сервер и нажмите ▶️",
         parse_mode="HTML",
@@ -115,7 +115,7 @@ async def howto_desktop(callback: CallbackQuery):
     await callback.message.edit_text(
         "💻 <b>Подключение на Windows / Mac</b>\n\n"
         "1. Скачайте <b>Happ</b> с сайта happ.su\n"
-        "2. Получите ссылку vless:// в боте\n"
+        "2. Получите ссылку в боте\n"
         "3. В Happ нажмите «+» → вставьте ссылку\n"
         "4. Нажмите «Подключиться»",
         parse_mode="HTML",
@@ -142,7 +142,7 @@ async def show_plans(event, db_user: User, session: AsyncSession):
     text = (
         "🛒 <b>Выберите тариф:</b>\n\n"
         "🔒 Протокол: VLESS + WS + TLS\n"
-        "📱 Устройств: 1\n"
+        "📱 Устройств: 2\n"
         "⚡️ Скорость: очень высокая\n"
         "🚫 Логи: не ведутся"
     )
@@ -170,7 +170,7 @@ async def plan_trial(callback: CallbackQuery, db_user: User, session: AsyncSessi
 
     if ok:
         await callback.message.edit_text(
-            f"🎉 <b>Пробный период активирован на 3 дня!</b>\n\n"
+            f"🎉 <b>Пробный период активирован на 7 дней!</b>\n\n"
             f"🔗 <b>Ваша ссылка для подключения:</b>\n"
             f"<code>{link_or_err}</code>\n\n"
             f"Нажмите «🔑 Мой доступ» чтобы посмотреть инструкцию по подключению.",

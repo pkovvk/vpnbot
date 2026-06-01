@@ -136,6 +136,7 @@ class SubscriptionRepository:
         xui_client_id: str | None = None,
         xui_email: str | None = None,
         xui_inbound_id: int | None = None,
+        xui_sub_id: str | None = None,
     ) -> "Subscription":
         sub = Subscription(
             user_id=user_id,
@@ -145,6 +146,7 @@ class SubscriptionRepository:
             xui_client_id=xui_client_id,
             xui_email=xui_email,
             xui_inbound_id=xui_inbound_id,
+            xui_sub_id=xui_sub_id,
         )
         self.session.add(sub)
         await self.session.commit()

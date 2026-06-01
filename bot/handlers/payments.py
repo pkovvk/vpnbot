@@ -326,6 +326,65 @@ async def successful_stars_payment(message: Message, db_user: User, session: Asy
             parse_mode="HTML",
         )
 
+@router.callback_query(F.data.startswith("pay_balance_"))
+async def pay_balance(callback: CallbackQuery, db_user: User, session: AsyncSession):
+    plan = callback.data.split("_")[-1]
+    price = _get_price(plan, db_user)
+    days = PLAN_DAYS[plan]
+
+    if db_user.balance <= 0:
+        await callback.answer("Недостаточно средств на балансе.", show_alert=True)
+        return
+
+    final_price = max(0.0, price - db_user.balance)
+    deduct = min(db_user.balance, price)
+
+    # Списываем с баланса
+    from database import UserRepository
+    user_repo = UserRepository(session)
+    await user_repo.update_balance(db_user.id, -deduct)
+
+    pay_repo = PaymentRepository(session)
+    payment = await pay_repo.create(
+        user_id=db_user.id,
+        provider=PaymentProvider.REFERRAL_BALANCE,
+        amount_rub=price,
+        amount_paid=final_price,
+        plan_days=days,
+        discount_applied=0,
+    )
+
+    if final_price > 0:
+        # Баланса не хватило — доплата не реализована, возвращаем баланс
+        await user_repo.update_balance(db_user.id, deduct)
+        await callback.answer("Баланса недостаточно для полной оплаты.", show_alert=True)
+        return
+
+    await pay_repo.complete(payment.id)
+
+    has_discount = not db_user.has_used_referral_discount and db_user.referred_by_id is not None
+    if has_discount:
+        db_user.has_used_referral_discount = True
+        await session.commit()
+
+    ok, link_or_err = await activate_subscription(
+        session=session,
+        user_id=db_user.id,
+        plan_days=days,
+    )
+
+    if ok:
+        await callback.message.edit_text(
+            f"✅ <b>Оплачено с баланса! Подписка активирована.</b>\n\n"
+            f"🔗 Ссылка для подключения:\n<code>{link_or_err}</code>",
+            parse_mode="HTML",
+        )
+    else:
+        # Возвращаем деньги если активация не удалась
+        await user_repo.update_balance(db_user.id, deduct)
+        await callback.message.edit_text("❌ Ошибка активации. Баланс возвращён.", parse_mode="HTML")
+
+    await callback.answer()
 
 @router.callback_query(F.data == "cancel_payment")
 async def cancel_payment(callback: CallbackQuery):
