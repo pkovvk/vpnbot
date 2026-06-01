@@ -48,10 +48,13 @@ class XUINode:
     async def login(self) -> bool:
         try:
             await self.api.login()
-            return True
         except Exception as e:
+            if "No need to login" in str(e):
+                logger.info(f"[{self.node_name}] Using token auth, login skipped.")
+                return True
             logger.error(f"[{self.node_name}] Login error: {e}")
             return False
+        return True
 
     async def add_client(self, email: str, expires_at: datetime, limit_ip: int = 1) -> tuple[bool, str]:
         client_id = str(uuid.uuid4())
