@@ -42,10 +42,6 @@ class AdminStates(StatesGroup):
 
 # ─── Фильтр для администраторов ──────────────────────────────────────────────
 
-class AdminFilter(F):
-    pass
-
-
 def is_admin(user_id: int) -> bool:
     return user_id in settings.ADMIN_IDS
 
