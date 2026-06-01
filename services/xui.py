@@ -78,8 +78,8 @@ class XUINode:
         if result.get("success"):
             client_data = await self._get(f"panel/api/clients/get/{email}")
             if client_data.get("success"):
-                obj = client_data.get("obj", {})
-                client_id = obj.get("id") or obj.get("uuid", "")
+                obj = client_data.get("obj", {}).get("client", {})
+                client_id = obj.get("uuid", "")
                 sub_id = obj.get("subId", "")
                 return True, client_id, sub_id
             return True, "", ""
