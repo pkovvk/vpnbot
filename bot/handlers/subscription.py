@@ -141,9 +141,9 @@ async def show_plans(event, db_user: User, session: AsyncSession):
 
     text = (
         "🛒 <b>Выберите тариф:</b>\n\n"
-        "🔒 Протокол: VLESS + WS + TLS\n"
+        "🔒 Лимит: 100GB/мес\n"
         "📱 Устройств: 2\n"
-        "⚡️ Скорость: очень высокая\n"
+        "⚡️ Скорость: без ограничений\n"
         "🚫 Логи: не ведутся"
     )
 
