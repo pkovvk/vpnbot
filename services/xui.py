@@ -109,7 +109,7 @@ class XUINode:
 
     async def get_client_link(self, client_id: str, email: str, sub_id: str = "") -> str | None:
         if sub_id:
-            return f"https://leftvpn.online:2096/leftsubb/{sub_id}"
+            return f"https://vpn.leftvpn.online:2096/leftsubb/{sub_id}"
         return None
 
     async def is_healthy(self) -> bool:
