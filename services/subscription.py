@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from database import (
-    UserRepository, SubscriptionRepository, PaymentRepository, ReferralRepository,
-    SubscriptionStatus, PaymentProvider, PaymentStatus,
+    UserRepository, SubscriptionRepository, ReferralRepository,
+    SubscriptionStatus,
 )
 from services.xui import xui_manager
 
@@ -35,46 +35,64 @@ async def activate_subscription(
     Создаёт/продлевает клиента в 3x-ui и записывает в БД.
     Возвращает (success, sub_link | error_msg).
     """
+
     sub_repo = SubscriptionRepository(session)
     user_repo = UserRepository(session)
 
     now = datetime.now(timezone.utc)
+
     existing = await sub_repo.get_active(user_id)
+
     if existing and existing.expires_at.replace(tzinfo=timezone.utc) > now:
         base_date = existing.expires_at.replace(tzinfo=timezone.utc)
     else:
         base_date = now
+
     expires_at = base_date + timedelta(days=plan_days)
     email = _make_xui_email(user_id)
 
+    # ========== ПРОДЛЕНИЕ ==========
     if existing and existing.xui_client_id:
-        # Продлеваем существующую
         ok = await xui_manager.update_expiry_all_nodes(
-            existing.xui_client_id, email, expires_at
+            existing.xui_client_id,
+            email,
+            expires_at,
         )
+
         if ok:
             existing.expires_at = expires_at
             existing.status = SubscriptionStatus.ACTIVE
             existing.notified_3days = False
             existing.notified_expired = False
             await session.commit()
+
             link = await xui_manager.main_node.get_client_link(
-                existing.xui_client_id, email, existing.xui_sub_id or ""
+                existing.xui_client_id,
+                email,
+                existing.xui_sub_id or "",
             )
             return True, link or "Подписка продлена"
+
         return False, "Не удалось продлить в 3x-ui"
 
-    # Создаём нового клиента
+    # ========== СОЗДАНИЕ ==========
     total_gb = 20 if is_trial else 100
-    ok, client_id, sub_id = await xui_manager.create_client_all_nodes(email, expires_at, total_gb=total_gb)
+
+    ok, client_id, sub_id = await xui_manager.create_client_all_nodes(
+        email=email,
+        expires_at=expires_at,
+        total_gb=total_gb,
+        inbound_ids=settings.XUI_INBOUND_IDS,   # <<< ВАЖНО
+    )
+
     if not ok:
         return False, "Не удалось создать клиента в 3x-ui"
 
-    # Если была старая (истёкшая) — помечаем
     if existing:
         await sub_repo.update_status(existing.id, SubscriptionStatus.EXPIRED)
 
     status = SubscriptionStatus.TRIAL if is_trial else SubscriptionStatus.ACTIVE
+
     sub = await sub_repo.create(
         user_id=user_id,
         started_at=now,
@@ -83,10 +101,9 @@ async def activate_subscription(
         xui_client_id=client_id,
         xui_email=email,
         xui_sub_id=sub_id,
-        xui_inbound_id=settings.XUI_INBOUND_ID,
     )
 
-    # Отмечаем использование триала и начисляем бонус рефереру
+    # ========== ТРИАЛ + РЕФЕРАЛКА ==========
     if is_trial:
         user = await user_repo.get_by_id(user_id)
         if user:
@@ -95,16 +112,24 @@ async def activate_subscription(
 
             if user.referred_by_id:
                 ref_repo = ReferralRepository(session)
+
                 await ref_repo.add_reward(
                     referrer_id=user.referred_by_id,
                     referral_id=user_id,
                     amount=settings.REFERRAL_REWARD_RUB,
                 )
+
                 await user_repo.update_balance(
-                    user.referred_by_id, settings.REFERRAL_REWARD_RUB
+                    user.referred_by_id,
+                    settings.REFERRAL_REWARD_RUB,
                 )
 
-    link = await xui_manager.main_node.get_client_link(client_id, email, sub_id)
+    link = await xui_manager.main_node.get_client_link(
+        client_id,
+        email,
+        sub_id,
+    )
+
     return True, link or "Подписка активирована"
 
 
@@ -114,43 +139,76 @@ async def revoke_subscription(
     reason: str = "expired",
 ) -> bool:
     """Отозвать подписку (отключить в 3x-ui + пометить в БД)."""
+
     sub_repo = SubscriptionRepository(session)
     sub = await sub_repo.get_active(user_id)
+
     if not sub:
         return False
 
     email = _make_xui_email(user_id)
-    if sub.xui_client_id:
-        await xui_manager.toggle_client_all_nodes(sub.xui_client_id, email, enable=False)
 
-    status = SubscriptionStatus.SUSPENDED if reason == "manual" else SubscriptionStatus.EXPIRED
+    if sub.xui_client_id:
+        await xui_manager.toggle_client_all_nodes(
+            sub.xui_client_id,
+            email,
+            enable=False,
+        )
+
+    status = (
+        SubscriptionStatus.SUSPENDED
+        if reason == "manual"
+        else SubscriptionStatus.EXPIRED
+    )
+
     await sub_repo.update_status(sub.id, status)
     return True
 
 
-async def restore_subscription(session: AsyncSession, user_id: int) -> bool:
+async def restore_subscription(
+    session: AsyncSession,
+    user_id: int,
+) -> bool:
     """Восстановить вручную отозванную подписку."""
+
     sub_repo = SubscriptionRepository(session)
     sub = await sub_repo.get_active(user_id)
+
     if not sub:
         return False
 
     email = _make_xui_email(user_id)
+
     if sub.xui_client_id:
-        ok = await xui_manager.toggle_client_all_nodes(sub.xui_client_id, email, enable=True)
+        ok = await xui_manager.toggle_client_all_nodes(
+            sub.xui_client_id,
+            email,
+            enable=True,
+        )
+
         if ok:
             await sub_repo.update_status(sub.id, SubscriptionStatus.ACTIVE)
             return True
+
     return False
 
 
-async def get_sub_link(session: AsyncSession, user_id: int) -> str | None:
+async def get_sub_link(
+    session: AsyncSession,
+    user_id: int,
+) -> str | None:
     """Получить актуальную ссылку подписки."""
+
     sub_repo = SubscriptionRepository(session)
     sub = await sub_repo.get_active(user_id)
+
     if not sub or not sub.xui_client_id:
         return None
+
     email = _make_xui_email(user_id)
+
     return await xui_manager.main_node.get_client_link(
-        sub.xui_client_id, email, sub.xui_sub_id or ""
+        sub.xui_client_id,
+        email,
+        sub.xui_sub_id or "",
     )

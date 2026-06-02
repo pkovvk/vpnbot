@@ -4,44 +4,52 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    # Telegram
+    # ===== TELEGRAM =====
     BOT_TOKEN: str
     ADMIN_IDS: List[int] = []
 
-    # Database
+    # ===== DATABASE =====
     DATABASE_URL: str
 
-    # 3x-ui
+    # ===== 3X-UI =====
     XUI_HOST: str
     XUI_USERNAME: str
     XUI_PASSWORD: str
     XUI_TOKEN: str = ""
-    XUI_INBOUND_ID: int = 1
+    XUI_INBOUND_IDS: List[int] = [1]
 
-    # YooKassa
+    # ===== YOOKASSA =====
     YOOKASSA_SHOP_ID: str = ""
     YOOKASSA_SECRET_KEY: str = ""
     YOOKASSA_RETURN_URL: str = ""
 
-    # CryptoBot
+    # ===== CRYPTOBOT =====
     CRYPTOBOT_API_TOKEN: str = ""
     CRYPTOBOT_NETWORK: str = "mainnet"
 
-    # Prices
+    # ===== PRICES =====
     PRICE_1_MONTH: int = 299
     TRIAL_DAYS: int = 7
     SUBSCRIPTION_DAYS: int = 30
 
-    # Referral
+    # ===== REFERRAL =====
     REFERRAL_REWARD_RUB: int = 50
     REFERRAL_DISCOUNT_PERCENT: int = 50
 
-    # Notifications
+    # ===== NOTIFICATIONS =====
     NOTIFY_BEFORE_DAYS: int = 3
 
+    # ===== PARSERS =====
     @field_validator("ADMIN_IDS", mode="before")
     @classmethod
     def parse_admin_ids(cls, v):
+        if isinstance(v, str):
+            return [int(x.strip()) for x in v.split(",") if x.strip()]
+        return v
+
+    @field_validator("XUI_INBOUND_IDS", mode="before")
+    @classmethod
+    def parse_inbound_ids(cls, v):
         if isinstance(v, str):
             return [int(x.strip()) for x in v.split(",") if x.strip()]
         return v
