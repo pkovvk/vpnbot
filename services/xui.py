@@ -70,15 +70,16 @@ class XUINode:
         expires_ms = int(expires_at.timestamp() * 1000)
 
         result = await self._post("panel/api/clients/add", {
-            "client": {
-                "email": email,
-                "expiryTime": expires_ms,
-                "limitIp": limit_ip,
-                "totalGB": total_gb * 1024 * 1024 * 1024,
-                "enable": True,
-            },
-            "inboundIds": inbound_ids,
-        })
+        "client": {
+            "email": email,
+            "expiryTime": expires_ms,
+            "limitIp": limit_ip,
+            "totalGB": total_gb * 1024 * 1024 * 1024,
+            "tgId": 0,
+            "enable": True,
+        },
+        "inboundIds": inbound_ids,
+    })
 
         if result.get("success"):
             client_data = await self._get(f"panel/api/clients/get/{email}")
