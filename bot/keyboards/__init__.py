@@ -114,7 +114,10 @@ def admin_main_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❌ Отозвать подписку", callback_data="admin_revoke"),
     )
     builder.row(InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast"))
-    builder.row(InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="admin_find_user"))
+    builder.row(
+        InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="admin_find_user"),
+        InlineKeyboardButton(text="💰 Баланс", callback_data="admin_balance"),
+    )
     return builder.as_markup()
 
 

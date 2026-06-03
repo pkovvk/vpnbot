@@ -73,7 +73,7 @@ async def activate_subscription(
             )
             return True, link or "Подписка продлена"
 
-        return False, "Не удалось продлить в 3x-ui"
+        return False, "Не удалось продлить на VPN сервере."
 
     # ========== СОЗДАНИЕ ==========
     total_gb = 20 if is_trial else 200
@@ -86,7 +86,7 @@ async def activate_subscription(
     )
 
     if not ok:
-        return False, "Не удалось создать клиента в 3x-ui"
+        return False, "Не удалось создать клиента на VPN сервере."
 
     if existing:
         await sub_repo.update_status(existing.id, SubscriptionStatus.EXPIRED)

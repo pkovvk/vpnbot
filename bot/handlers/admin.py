@@ -39,6 +39,10 @@ class AdminStates(StatesGroup):
     # Поиск пользователя
     waiting_find_user = State()
 
+    # Изменение баланса
+    waiting_user_id_balance = State()
+    waiting_balance_amount = State()
+
 
 # ─── Фильтр для администраторов ──────────────────────────────────────────────
 
@@ -144,7 +148,6 @@ async def admin_grant_days(message: Message, state: FSMContext, session: AsyncSe
             f"Ссылка: <code>{result}</code>",
             parse_mode="HTML",
         )
-        # Уведомляем пользователя
         try:
             await message.bot.send_message(
                 target_id,
@@ -396,6 +399,124 @@ async def admin_find_user_result(message: Message, state: FSMContext, session: A
         f"Подписка: {sub_info}",
         parse_mode="HTML",
     )
+    await state.clear()
+
+
+# ─── Изменение баланса ────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "admin_balance")
+async def admin_balance_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "💰 <b>Изменение баланса</b>\n\n"
+        "Введите Telegram ID пользователя:",
+        parse_mode="HTML",
+    )
+    await state.set_state(AdminStates.waiting_user_id_balance)
+    await callback.answer()
+
+
+@router.message(AdminStates.waiting_user_id_balance)
+async def admin_balance_user_id(message: Message, state: FSMContext, session: AsyncSession):
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        user_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Введите числовой ID.")
+        return
+
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_id(user_id)
+    if not user:
+        await message.answer("❌ Пользователь не найден.")
+        await state.clear()
+        return
+
+    await state.update_data(target_user_id=user_id)
+    await message.answer(
+        f"👤 Пользователь <code>{user_id}</code> | Текущий баланс: <b>{user.balance:.0f}₽</b>\n\n"
+        f"Введите сумму изменения:\n"
+        f"• <code>+500</code> — пополнить на 500₽\n"
+        f"• <code>-200</code> — списать 200₽\n"
+        f"• <code>=1000</code> — установить баланс 1000₽",
+        parse_mode="HTML",
+    )
+    await state.set_state(AdminStates.waiting_balance_amount)
+
+
+@router.message(AdminStates.waiting_balance_amount)
+async def admin_balance_apply(message: Message, state: FSMContext, session: AsyncSession):
+    if not is_admin(message.from_user.id):
+        return
+
+    raw = message.text.strip()
+    data = await state.get_data()
+    target_id = data["target_user_id"]
+
+    user_repo = UserRepository(session)
+    user: User = await user_repo.get_by_id(target_id)
+    if not user:
+        await message.answer("❌ Пользователь не найден.")
+        await state.clear()
+        return
+
+    old_balance = user.balance
+
+    try:
+        if raw.startswith("="):
+            new_balance = float(raw[1:])
+            if new_balance < 0:
+                raise ValueError
+            action_text = f"установлен в {new_balance:.0f}₽"
+        elif raw.startswith("+"):
+            delta = float(raw[1:])
+            if delta <= 0:
+                raise ValueError
+            new_balance = old_balance + delta
+            action_text = f"пополнен на {delta:.0f}₽"
+        elif raw.startswith("-"):
+            delta = float(raw[1:])
+            if delta <= 0:
+                raise ValueError
+            new_balance = max(0.0, old_balance - delta)
+            action_text = f"списано {delta:.0f}₽ (было {old_balance:.0f}₽)"
+        else:
+            raise ValueError
+    except (ValueError, IndexError):
+        await message.answer(
+            "❌ Неверный формат. Используйте:\n"
+            "<code>+500</code> — пополнить\n"
+            "<code>-200</code> — списать\n"
+            "<code>=1000</code> — установить",
+            parse_mode="HTML",
+        )
+        return
+
+    user.balance = new_balance
+    await session.commit()
+
+    await message.answer(
+        f"✅ Баланс пользователя <code>{target_id}</code> {action_text}.\n"
+        f"Новый баланс: <b>{new_balance:.0f}₽</b>",
+        parse_mode="HTML",
+        reply_markup=admin_main_kb(),
+    )
+
+    try:
+        await message.bot.send_message(
+            target_id,
+            f"💰 Ваш баланс изменён администратором.\n"
+            f"Было: <b>{old_balance:.0f}₽</b> → Стало: <b>{new_balance:.0f}₽</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
     await state.clear()
 
 
