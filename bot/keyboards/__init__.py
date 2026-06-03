@@ -38,7 +38,6 @@ def subscription_plans_kb(has_used_trial: bool, has_discount: bool) -> InlineKey
 
 
 def payment_method_kb(plan: str, balance: float = 0.0, price: float = 0.0) -> InlineKeyboardMarkup:
-    from config import settings
     builder = InlineKeyboardBuilder()
 
     if balance > 0:
@@ -83,6 +82,17 @@ def my_access_kb(has_active: bool) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def howto_kb(sub_id: str) -> InlineKeyboardMarkup:
+    """Клавиатура с одной кнопкой-ссылкой на инструкцию по подключению."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="📖 Инструкция по подключению",
+        url=f"https://leftvpn.online/sub/?id={sub_id}",
+    ))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_access"))
+    return builder.as_markup()
+
+
 # ─── Реферальная программа ───────────────────────────────────────────────────
 
 def referral_kb(ref_link: str) -> InlineKeyboardMarkup:
@@ -91,17 +101,6 @@ def referral_kb(ref_link: str) -> InlineKeyboardMarkup:
         text="📤 Поделиться реферальной ссылкой",
         url=f"https://t.me/share/url?url={ref_link}&text=Попробуй%20мой%20VPN%20сервис!",
     ))
-    return builder.as_markup()
-
-
-# ─── Инструкция по подключению ───────────────────────────────────────────────
-
-def howto_kb() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="📱 iOS", callback_data="howto_ios"))
-    builder.row(InlineKeyboardButton(text="🤖 Android", callback_data="howto_android"))
-    builder.row(InlineKeyboardButton(text="💻 Windows / Mac", callback_data="howto_desktop"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_access"))
     return builder.as_markup()
 
 

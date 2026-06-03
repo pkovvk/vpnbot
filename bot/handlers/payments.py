@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards import payment_url_kb
 from config import settings
-from database import PaymentRepository, SubscriptionRepository
+from database import PaymentRepository, UserRepository
 from database.models import User, PaymentProvider, PaymentStatus
 from services.payments import (
     create_yookassa_payment,
@@ -54,7 +54,7 @@ async def pay_yookassa(callback: CallbackQuery, db_user: User, session: AsyncSes
 
     pay_repo = PaymentRepository(session)
     has_discount = not db_user.has_used_referral_discount and db_user.referred_by_id is not None
-    payment = await pay_repo.create(
+    await pay_repo.create(
         user_id=db_user.id,
         provider=PaymentProvider.YOOKASSA,
         provider_payment_id=result["payment_id"],
@@ -94,7 +94,6 @@ async def check_yookassa(callback: CallbackQuery, db_user: User, session: AsyncS
         await callback.answer("✅ Подписка уже активирована!", show_alert=True)
         return
 
-    # Проверяем статус через API ЮКассы
     import base64, aiohttp
     credentials = base64.b64encode(
         f"{settings.YOOKASSA_SHOP_ID}:{settings.YOOKASSA_SECRET_KEY}".encode()
@@ -117,11 +116,12 @@ async def check_yookassa(callback: CallbackQuery, db_user: User, session: AsyncS
     if data.get("status") == "succeeded":
         await pay_repo.complete(payment.id)
 
-        # Помечаем скидку использованной
         if payment.discount_applied > 0:
             db_user.has_used_referral_discount = True
             await session.commit()
 
+        # Если это доплата с частичным балансом — баланс уже списан ранее,
+        # просто активируем подписку
         ok, link_or_err = await activate_subscription(
             session=session,
             user_id=db_user.id,
@@ -144,7 +144,16 @@ async def check_yookassa(callback: CallbackQuery, db_user: User, session: AsyncS
         await callback.answer("Платёж ещё не поступил. Подождите и попробуйте снова.", show_alert=True)
     else:
         await pay_repo.fail(payment.id)
-        await callback.answer("Платёж не прошёл.", show_alert=True)
+
+        # Если платёж провалился и был частичный баланс — возвращаем его
+        # Определяем по metadata: balance_used хранится в amount_rub - amount_paid
+        balance_used = payment.amount_rub - payment.amount_paid
+        if balance_used > 0:
+            user_repo = UserRepository(session)
+            await user_repo.update_balance(db_user.id, balance_used)
+            await callback.answer("Платёж не прошёл. Баланс возвращён.", show_alert=True)
+        else:
+            await callback.answer("Платёж не прошёл.", show_alert=True)
 
 
 # ─── CryptoBot ───────────────────────────────────────────────────────────────
@@ -170,7 +179,7 @@ async def pay_crypto(callback: CallbackQuery, db_user: User, session: AsyncSessi
 
     pay_repo = PaymentRepository(session)
     has_discount = not db_user.has_used_referral_discount and db_user.referred_by_id is not None
-    payment = await pay_repo.create(
+    await pay_repo.create(
         user_id=db_user.id,
         provider=PaymentProvider.CRYPTOBOT,
         provider_payment_id=result["invoice_id"],
@@ -274,7 +283,7 @@ async def pay_stars(callback: CallbackQuery, db_user: User, bot: Bot):
     await bot.send_invoice(
         chat_id=callback.from_user.id,
         title=f"VPN подписка на {days} дней",
-        description=f"Безопасный VPN. Протокол VLESS+WS+TLS. 1 устройство.",
+        description="Безопасный VPN. Протокол VLESS+WS+TLS. 1 устройство.",
         payload=f"vpn_{plan}_{db_user.id}",
         currency="XTR",
         prices=[LabeledPrice(label="VPN подписка", amount=stars)],
@@ -284,7 +293,6 @@ async def pay_stars(callback: CallbackQuery, db_user: User, bot: Bot):
 
 @router.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery):
-    """Telegram требует подтвердить платёж в течение 10 секунд."""
     await query.answer(ok=True)
 
 
@@ -292,7 +300,7 @@ async def pre_checkout(query: PreCheckoutQuery):
 async def successful_stars_payment(message: Message, db_user: User, session: AsyncSession):
     payload = message.successful_payment.invoice_payload
     parts = payload.split("_")
-    plan = parts[1]  # month
+    plan = parts[1]
     days = PLAN_DAYS.get(plan, 30)
 
     pay_repo = PaymentRepository(session)
@@ -326,6 +334,9 @@ async def successful_stars_payment(message: Message, db_user: User, session: Asy
             parse_mode="HTML",
         )
 
+
+# ─── Баланс ───────────────────────────────────────────────────────────────────
+
 @router.callback_query(F.data.startswith("pay_balance_"))
 async def pay_balance(callback: CallbackQuery, db_user: User, session: AsyncSession):
     plan = callback.data.split("_")[-1]
@@ -336,55 +347,99 @@ async def pay_balance(callback: CallbackQuery, db_user: User, session: AsyncSess
         await callback.answer("Недостаточно средств на балансе.", show_alert=True)
         return
 
-    final_price = max(0.0, price - db_user.balance)
-    deduct = min(db_user.balance, price)
-
-    # Списываем с баланса
-    from database import UserRepository
     user_repo = UserRepository(session)
-    await user_repo.update_balance(db_user.id, -deduct)
-
     pay_repo = PaymentRepository(session)
-    payment = await pay_repo.create(
-        user_id=db_user.id,
-        provider=PaymentProvider.REFERRAL_BALANCE,
-        amount_rub=price,
-        amount_paid=final_price,
-        plan_days=days,
-        discount_applied=0,
-    )
 
-    if final_price > 0:
-        # Баланса не хватило — доплата не реализована, возвращаем баланс
-        await user_repo.update_balance(db_user.id, deduct)
-        await callback.answer("Баланса недостаточно для полной оплаты.", show_alert=True)
+    # ── Баланса хватает полностью ─────────────────────────────────────────────
+    if db_user.balance >= price:
+        await user_repo.update_balance(db_user.id, -price)
+
+        payment = await pay_repo.create(
+            user_id=db_user.id,
+            provider=PaymentProvider.REFERRAL_BALANCE,
+            amount_rub=price,
+            amount_paid=0,
+            plan_days=days,
+            discount_applied=0,
+        )
+        await pay_repo.complete(payment.id)
+
+        has_discount = not db_user.has_used_referral_discount and db_user.referred_by_id is not None
+        if has_discount:
+            db_user.has_used_referral_discount = True
+            await session.commit()
+
+        ok, link_or_err = await activate_subscription(
+            session=session,
+            user_id=db_user.id,
+            plan_days=days,
+        )
+
+        if ok:
+            await callback.message.edit_text(
+                f"✅ <b>Оплачено с баланса! Подписка активирована.</b>\n\n"
+                f"🔗 Ссылка для подключения:\n<code>{link_or_err}</code>",
+                parse_mode="HTML",
+            )
+        else:
+            # Возвращаем баланс если активация не удалась
+            await user_repo.update_balance(db_user.id, price)
+            await callback.message.edit_text(
+                "❌ Ошибка активации. Баланс возвращён.", parse_mode="HTML"
+            )
+
+        await callback.answer()
         return
 
-    await pay_repo.complete(payment.id)
+    # ── Баланса не хватает — доплата через ЮКассу ────────────────────────────
+    balance_used = db_user.balance          # сколько списываем с баланса
+    topup_amount = price - balance_used     # сколько доплачивать через ЮКассу
 
-    has_discount = not db_user.has_used_referral_discount and db_user.referred_by_id is not None
-    if has_discount:
-        db_user.has_used_referral_discount = True
-        await session.commit()
+    await callback.message.edit_text("⏳ Создаём платёж на доплату...", parse_mode="HTML")
 
-    ok, link_or_err = await activate_subscription(
-        session=session,
+    result = await create_yookassa_payment(
+        amount_rub=topup_amount,
+        description=f"VPN на {days} дней (доплата, {balance_used:.0f}₽ с баланса)",
         user_id=db_user.id,
         plan_days=days,
     )
 
-    if ok:
-        await callback.message.edit_text(
-            f"✅ <b>Оплачено с баланса! Подписка активирована.</b>\n\n"
-            f"🔗 Ссылка для подключения:\n<code>{link_or_err}</code>",
-            parse_mode="HTML",
-        )
-    else:
-        # Возвращаем деньги если активация не удалась
-        await user_repo.update_balance(db_user.id, deduct)
-        await callback.message.edit_text("❌ Ошибка активации. Баланс возвращён.", parse_mode="HTML")
+    if not result:
+        await callback.message.edit_text("❌ Ошибка создания платежа. Попробуйте позже.")
+        await callback.answer()
+        return
 
+    # Списываем баланс сразу — он зарезервирован под этот платёж
+    await user_repo.update_balance(db_user.id, -balance_used)
+
+    # Сохраняем платёж: amount_rub = полная цена, amount_paid = сумма доплаты.
+    # Разница (amount_rub - amount_paid) = balance_used — используется при возврате.
+    has_discount = not db_user.has_used_referral_discount and db_user.referred_by_id is not None
+    await pay_repo.create(
+        user_id=db_user.id,
+        provider=PaymentProvider.YOOKASSA,
+        provider_payment_id=result["payment_id"],
+        amount_rub=price,           # полная стоимость
+        amount_paid=topup_amount,   # только доплата через ЮКассу
+        plan_days=days,
+        discount_applied=settings.REFERRAL_DISCOUNT_PERCENT if has_discount else 0,
+    )
+
+    await callback.message.edit_text(
+        f"💳 <b>Доплата через ЮКассу</b>\n\n"
+        f"С баланса списано: <b>{balance_used:.0f}₽</b>\n"
+        f"Доплата картой: <b>{topup_amount:.0f}₽</b>\n"
+        f"Подписка: <b>{days} дней</b>\n\n"
+        f"После оплаты нажмите «✅ Я оплатил»",
+        parse_mode="HTML",
+        reply_markup=payment_url_kb(
+            result["confirmation_url"],
+            result["payment_id"],
+            "yookassa",
+        ),
+    )
     await callback.answer()
+
 
 @router.callback_query(F.data == "cancel_payment")
 async def cancel_payment(callback: CallbackQuery):

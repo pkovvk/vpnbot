@@ -70,15 +70,18 @@ async def back_to_access(callback: CallbackQuery, db_user: User, session: AsyncS
 
 @router.callback_query(F.data == "get_link")
 async def get_link(callback: CallbackQuery, db_user: User, session: AsyncSession):
+    sub_repo = SubscriptionRepository(session)
+    sub = await sub_repo.get_active(db_user.id)
+
     link = await get_sub_link(session, db_user.id)
-    if link:
+    if link and sub and sub.xui_sub_id:
         await callback.message.answer(
             f"🔗 <b>Ваша ссылка для подключения:</b>\n\n"
             f"<code>{link}</code>\n\n"
             f"Скопируйте ссылку и вставьте в ваш VPN-клиент.\n"
             f"Нажмите кнопку «Инструкция», если не знаете как подключиться.",
             parse_mode="HTML",
-            reply_markup=howto_kb(),
+            reply_markup=howto_kb(sub.xui_sub_id),
         )
     else:
         await callback.answer("Не удалось получить ссылку. Обратитесь в поддержку.", show_alert=True)
@@ -86,54 +89,19 @@ async def get_link(callback: CallbackQuery, db_user: User, session: AsyncSession
 
 
 @router.callback_query(F.data == "howto")
-async def howto(callback: CallbackQuery):
+async def howto(callback: CallbackQuery, db_user: User, session: AsyncSession):
+    sub_repo = SubscriptionRepository(session)
+    sub = await sub_repo.get_active(db_user.id)
+
+    if not sub or not sub.xui_sub_id:
+        await callback.answer("Подписка не найдена. Обратитесь в поддержку.", show_alert=True)
+        return
+
     await callback.message.edit_text(
-        "📖 <b>Выберите ваше устройство:</b>",
+        "📖 <b>Инструкция по подключению</b>\n\n"
+        "Нажмите кнопку ниже — откроется пошаговая инструкция для вашего устройства.",
         parse_mode="HTML",
-        reply_markup=howto_kb(),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "howto_ios")
-async def howto_ios(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "📱 <b>Подключение на iOS</b>\n\n"
-        "1. Установите приложение <b>Happ</b> из App Store\n"
-        "2. Откройте бот и нажмите «Получить ссылку подключения»\n"
-        "3. Скопируйте ссылку\n"
-        "4. В Happ нажмите «+» → «Импорт из буфера обмена»\n"
-        "5. Нажмите кнопку подключения ✅",
-        parse_mode="HTML",
-        reply_markup=howto_kb(),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "howto_android")
-async def howto_android(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "🤖 <b>Подключение на Android</b>\n\n"
-        "1. Установите <b>v2rayNG</b> из Google Play\n"
-        "2. Получите ссылку в боте\n"
-        "3. В v2rayNG нажмите «+» → «Импорт конфигурации из буфера обмена»\n"
-        "4. Выберите добавленный сервер и нажмите ▶️",
-        parse_mode="HTML",
-        reply_markup=howto_kb(),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "howto_desktop")
-async def howto_desktop(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "💻 <b>Подключение на Windows / Mac</b>\n\n"
-        "1. Скачайте <b>Happ</b> с сайта happ.su\n"
-        "2. Получите ссылку в боте\n"
-        "3. В Happ нажмите «+» → вставьте ссылку\n"
-        "4. Нажмите «Подключиться»",
-        parse_mode="HTML",
-        reply_markup=howto_kb(),
+        reply_markup=howto_kb(sub.xui_sub_id),
     )
     await callback.answer()
 
@@ -182,12 +150,18 @@ async def plan_trial(callback: CallbackQuery, db_user: User, session: AsyncSessi
     )
 
     if ok:
+        # Получаем sub_id для кнопки инструкции
+        sub_repo = SubscriptionRepository(session)
+        sub = await sub_repo.get_active(db_user.id)
+        kb = howto_kb(sub.xui_sub_id) if sub and sub.xui_sub_id else None
+
         await callback.message.edit_text(
             f"🎉 <b>Пробный период активирован на 7 дней!</b>\n\n"
             f"🔗 <b>Ваша ссылка для подключения:</b>\n"
             f"<code>{link_or_err}</code>\n\n"
-            f"Нажмите «🔑 Мой доступ» чтобы посмотреть инструкцию по подключению.",
+            f"Нажмите «Инструкция», если не знаете как подключиться.",
             parse_mode="HTML",
+            reply_markup=kb,
         )
     else:
         await callback.message.edit_text(
@@ -199,15 +173,15 @@ async def plan_trial(callback: CallbackQuery, db_user: User, session: AsyncSessi
 
 @router.callback_query(F.data == "plan_month")
 async def plan_month(callback: CallbackQuery, db_user: User):
-    price = _get_plan_price("month", db_user)  # FIX: считаем цену с учётом скидки
+    price = _get_plan_price("month", db_user)
 
     await callback.message.edit_text(
         "💳 <b>Выберите способ оплаты:</b>",
         parse_mode="HTML",
         reply_markup=payment_method_kb(
             plan="month",
-            balance=db_user.balance,  # FIX: передаём баланс
-            price=price,              # FIX: передаём цену
+            balance=db_user.balance,
+            price=price,
         ),
     )
     await callback.answer()
