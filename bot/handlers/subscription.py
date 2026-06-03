@@ -7,9 +7,23 @@ from bot.keyboards import subscription_plans_kb, my_access_kb, howto_kb, payment
 from database import SubscriptionRepository
 from database.models import User
 from services.subscription import get_sub_link, activate_subscription
+from services.payments import get_price_with_discount
 from database.models import SubscriptionStatus
+from config import settings
 
 router = Router()
+
+
+def _get_plan_price(plan: str, db_user: User) -> float:
+    """Вычислить финальную цену с учётом скидки."""
+    base = settings.PRICE_1_MONTH if plan == "month" else 0
+    has_discount = (
+        not db_user.has_used_referral_discount
+        and db_user.referred_by_id is not None
+    )
+    if has_discount and plan == "month":
+        return get_price_with_discount(base, settings.REFERRAL_DISCOUNT_PERCENT)
+    return base
 
 
 # ─── Мой доступ ──────────────────────────────────────────────────────────────
@@ -160,7 +174,6 @@ async def plan_trial(callback: CallbackQuery, db_user: User, session: AsyncSessi
         await callback.answer("Вы уже использовали пробный период.", show_alert=True)
         return
 
-    # Активируем сразу без оплаты
     ok, link_or_err = await activate_subscription(
         session=session,
         user_id=db_user.id,
@@ -186,9 +199,15 @@ async def plan_trial(callback: CallbackQuery, db_user: User, session: AsyncSessi
 
 @router.callback_query(F.data == "plan_month")
 async def plan_month(callback: CallbackQuery, db_user: User):
+    price = _get_plan_price("month", db_user)  # FIX: считаем цену с учётом скидки
+
     await callback.message.edit_text(
         "💳 <b>Выберите способ оплаты:</b>",
         parse_mode="HTML",
-        reply_markup=payment_method_kb("month"),
+        reply_markup=payment_method_kb(
+            plan="month",
+            balance=db_user.balance,  # FIX: передаём баланс
+            price=price,              # FIX: передаём цену
+        ),
     )
     await callback.answer()

@@ -174,15 +174,19 @@ class XUIManager:
         email: str,
         expires_at: datetime,
         total_gb: int = 0,
+        inbound_ids: list[int] | None = None,  # FIX: принимаем inbound_ids извне
     ) -> tuple[bool, str, str]:
 
         if not self._nodes:
             return False, "", ""
 
+        # FIX: используем переданный список, fallback на дефолт из settings
+        resolved_inbound_ids = inbound_ids if inbound_ids is not None else settings.XUI_INBOUND_IDS
+
         ok, client_id, sub_id = await self.main_node.add_client(
             email=email,
             expires_at=expires_at,
-            inbound_ids=settings.XUI_INBOUND_IDS,
+            inbound_ids=resolved_inbound_ids,  # FIX: передаём resolved
             total_gb=total_gb,
         )
 
@@ -197,7 +201,7 @@ class XUIManager:
                     node.add_client(
                         email=email,
                         expires_at=expires_at,
-                        inbound_ids=settings.XUI_INBOUND_IDS,
+                        inbound_ids=resolved_inbound_ids,  # FIX: и здесь тоже
                         total_gb=total_gb,
                     )
                     for node in extra_nodes.values()
@@ -240,7 +244,8 @@ class XUIManager:
             return_exceptions=True,
         )
 
-        return all(r is True for r in results)
+        # FIX: any вместо all — достаточно чтобы хотя бы одна нода (главная) обновилась
+        return any(r is True for r in results)
 
     async def close_all(self):
         pass

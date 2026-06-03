@@ -76,7 +76,7 @@ async def activate_subscription(
         return False, "Не удалось продлить в 3x-ui"
 
     # ========== СОЗДАНИЕ ==========
-    total_gb = 20 if is_trial else 100
+    total_gb = 20 if is_trial else 200
 
     ok, client_id, sub_id = await xui_manager.create_client_all_nodes(
         email=email,
