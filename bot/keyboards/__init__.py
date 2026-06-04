@@ -118,6 +118,7 @@ def admin_main_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="admin_find_user"),
         InlineKeyboardButton(text="💰 Баланс", callback_data="admin_balance"),
     )
+    builder.row(InlineKeyboardButton(text="✉️ Написать пользователю", callback_data="admin_send_message"))
     return builder.as_markup()
 
 

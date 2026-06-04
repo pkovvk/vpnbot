@@ -43,6 +43,11 @@ class AdminStates(StatesGroup):
     waiting_user_id_balance = State()
     waiting_balance_amount = State()
 
+    # Отправка сообщения по ID
+    waiting_user_id_send = State()
+    waiting_message_send = State()
+    send_confirm = State()
+
 
 # ─── Фильтр для администраторов ──────────────────────────────────────────────
 
@@ -518,6 +523,127 @@ async def admin_balance_apply(message: Message, state: FSMContext, session: Asyn
         pass
 
     await state.clear()
+
+
+# ─── Отправка сообщения пользователю по ID ───────────────────────────────────
+
+@router.callback_query(F.data == "admin_send_message")
+async def admin_send_message_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "✉️ <b>Отправка сообщения пользователю</b>\n\n"
+        "Введите Telegram ID пользователя:",
+        parse_mode="HTML",
+    )
+    await state.set_state(AdminStates.waiting_user_id_send)
+    await callback.answer()
+
+
+@router.message(AdminStates.waiting_user_id_send)
+async def admin_send_message_user_id(message: Message, state: FSMContext, session: AsyncSession):
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        user_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Введите числовой ID.")
+        return
+
+    # Проверяем существование пользователя в БД
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_id(user_id)
+    if not user:
+        await message.answer(
+            f"⚠️ Пользователь <code>{user_id}</code> не найден в базе данных.\n"
+            "Всё равно попробовать отправить сообщение? Введите текст или /cancel для отмены.",
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer(
+            f"👤 Пользователь найден: <b>{user.full_name}</b> (<code>{user_id}</code>)\n\n"
+            "📝 Введите текст сообщения (поддерживается HTML разметка):",
+            parse_mode="HTML",
+        )
+
+    await state.update_data(target_user_id=user_id)
+    await state.set_state(AdminStates.waiting_message_send)
+
+
+@router.message(AdminStates.waiting_message_send)
+async def admin_send_message_text(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    # Поддержка фото с подписью
+    if message.photo:
+        photo: PhotoSize = message.photo[-1]
+        caption = message.caption or ""
+        await state.update_data(send_photo=photo.file_id, send_text=caption)
+        preview_text = caption or "(без текста)"
+        await message.answer(
+            f"📋 <b>Предпросмотр сообщения:</b>\n\n🖼 [Фото]\n{preview_text}",
+            parse_mode="HTML",
+            reply_markup=admin_confirm_kb("send_message"),
+        )
+    else:
+        await state.update_data(send_text=message.text, send_photo=None)
+        await message.answer(
+            f"📋 <b>Предпросмотр сообщения:</b>\n\n{message.text}",
+            parse_mode="HTML",
+            reply_markup=admin_confirm_kb("send_message"),
+        )
+
+    await state.set_state(AdminStates.send_confirm)
+
+
+@router.callback_query(F.data == "confirm_send_message")
+async def admin_send_message_do(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔", show_alert=True)
+        return
+
+    data = await state.get_data()
+    target_id = data.get("target_user_id")
+    text = data.get("send_text", "")
+    photo_id = data.get("send_photo")
+
+    try:
+        if photo_id:
+            await bot.send_photo(
+                chat_id=target_id,
+                photo=photo_id,
+                caption=text,
+                parse_mode="HTML",
+            )
+        else:
+            await bot.send_message(
+                chat_id=target_id,
+                text=text,
+                parse_mode="HTML",
+            )
+
+        await callback.message.edit_text(
+            f"✅ Сообщение успешно отправлено пользователю <code>{target_id}</code>.",
+            parse_mode="HTML",
+            reply_markup=admin_main_kb(),
+        )
+        logger.info(f"Admin {callback.from_user.id} sent message to user {target_id}")
+
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ Не удалось отправить сообщение пользователю <code>{target_id}</code>.\n\n"
+            f"Причина: <code>{e}</code>",
+            parse_mode="HTML",
+            reply_markup=admin_main_kb(),
+        )
+        logger.warning(f"Failed to send message to {target_id}: {e}")
+
+    await state.clear()
+    await callback.answer()
 
 
 # ─── Общая отмена ────────────────────────────────────────────────────────────
