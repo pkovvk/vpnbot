@@ -42,7 +42,7 @@ async def pay_yookassa(callback: CallbackQuery, db_user: User, session: AsyncSes
 
     result = await create_yookassa_payment(
         amount_rub=price,
-        description=f"VPN на {days} дней",
+        description=f"VPN на {days} дней (tg:{callback.from_user.id})",  # ← добавить
         user_id=db_user.id,
         plan_days=days,
     )
@@ -168,6 +168,7 @@ async def pay_crypto(callback: CallbackQuery, db_user: User, session: AsyncSessi
 
     result = await create_cryptobot_invoice(
         amount_rub=price,
+        description=f"VPN на {days} дней (tg:{callback.from_user.id})",  # ← добавить
         user_id=db_user.id,
         plan_days=days,
     )
@@ -399,7 +400,7 @@ async def pay_balance(callback: CallbackQuery, db_user: User, session: AsyncSess
 
     result = await create_yookassa_payment(
         amount_rub=topup_amount,
-        description=f"VPN на {days} дней (доплата, {balance_used:.0f}₽ с баланса)",
+        description=f"VPN на {days} дней, доплата, {balance_used:.0f}₽ с баланса (tg:{callback.from_user.id})",  # ← добавить
         user_id=db_user.id,
         plan_days=days,
     )
