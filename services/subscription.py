@@ -32,7 +32,7 @@ async def activate_subscription(
 ) -> tuple[bool, str]:
     """
     Активировать подписку.
-    Всегда удаляет старого клиента (если есть) и создаёт нового.
+    Создаёт/продлевает клиента в 3x-ui и записывает в БД.
     Возвращает (success, sub_link | error_msg).
     """
 
@@ -40,22 +40,40 @@ async def activate_subscription(
     user_repo = UserRepository(session)
 
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(days=plan_days)
-    email = _make_xui_email(user_id)
 
     existing = await sub_repo.get_active(user_id)
 
-    # ========== УДАЛЕНИЕ СТАРОГО КЛИЕНТА ==========
-    if existing and existing.xui_client_id:
-        try:
-            await xui_manager.delete_client_all_nodes(
-                existing.xui_client_id,
-                existing.xui_email,
-            )
-        except Exception:
-            pass  # игнорируем любые ошибки удаления
+    if existing and existing.expires_at.replace(tzinfo=timezone.utc) > now:
+        base_date = existing.expires_at.replace(tzinfo=timezone.utc)
+    else:
+        base_date = now
 
-        await sub_repo.update_status(existing.id, SubscriptionStatus.EXPIRED)
+    expires_at = base_date + timedelta(days=plan_days)
+    email = _make_xui_email(user_id)
+
+    # ========== ПРОДЛЕНИЕ ==========
+    if existing and existing.xui_client_id:
+        ok = await xui_manager.update_expiry_all_nodes(
+            existing.xui_client_id,
+            email,
+            expires_at,
+        )
+
+        if ok:
+            existing.expires_at = expires_at
+            existing.status = SubscriptionStatus.ACTIVE
+            existing.notified_3days = False
+            existing.notified_expired = False
+            await session.commit()
+
+            link = await xui_manager.main_node.get_client_link(
+                existing.xui_client_id,
+                email,
+                existing.xui_sub_id or "",
+            )
+            return True, link or "Подписка продлена"
+
+        return False, "Не удалось продлить на VPN сервере."
 
     # ========== СОЗДАНИЕ ==========
     total_gb = 20 if is_trial else 200
@@ -64,11 +82,14 @@ async def activate_subscription(
         email=email,
         expires_at=expires_at,
         total_gb=total_gb,
-        inbound_ids=settings.XUI_INBOUND_IDS,
+        inbound_ids=settings.XUI_INBOUND_IDS,   # <<< ВАЖНО
     )
 
     if not ok:
         return False, "Не удалось создать клиента на VPN сервере."
+
+    if existing:
+        await sub_repo.update_status(existing.id, SubscriptionStatus.EXPIRED)
 
     status = SubscriptionStatus.TRIAL if is_trial else SubscriptionStatus.ACTIVE
 
