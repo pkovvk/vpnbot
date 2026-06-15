@@ -45,7 +45,7 @@ async def check_expired_subscriptions(bot: Bot):
 
         for sub in subs:
             try:
-                await revoke_subscription(session, sub.user_id, reason="expired")
+                # await revoke_subscription(session, sub.user_id, reason="expired")
                 await sub_repo.mark_notified_expired(sub.id)
 
                 await bot.send_message(
