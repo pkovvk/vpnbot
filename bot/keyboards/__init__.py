@@ -11,7 +11,8 @@ from config import settings
 def main_menu_kb() -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardBuilder()
     kb.row(KeyboardButton(text="🔑 Мой доступ"))
-    kb.row(KeyboardButton(text="💳 Купить подписку"), KeyboardButton(text="👥 Реферальная программа"))
+    # kb.row(KeyboardButton(text="💳 Купить подписку"),
+    KeyboardButton(text="👥 Реферальная программа")
     kb.row(KeyboardButton(text="ℹ️ Помощь"))
     return kb.as_markup(resize_keyboard=True)
 
@@ -77,7 +78,7 @@ def my_access_kb(has_active: bool) -> InlineKeyboardMarkup:
     if has_active:
         builder.row(InlineKeyboardButton(text="🔗 Получить ссылку подключения", callback_data="get_link"))
         builder.row(InlineKeyboardButton(text="📖 Инструкция по подключению", callback_data="howto"))
-        builder.row(InlineKeyboardButton(text="🔄 Продлить подписку", callback_data="extend_sub"))
+        # builder.row(InlineKeyboardButton(text="🔄 Продлить подписку", callback_data="extend_sub"))
     else:
         builder.row(InlineKeyboardButton(text="🛒 Купить подписку", callback_data="go_buy"))
     return builder.as_markup()
