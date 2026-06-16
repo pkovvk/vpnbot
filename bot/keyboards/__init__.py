@@ -21,17 +21,18 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
 def subscription_plans_kb(has_used_trial: bool, has_discount: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
-    if not has_used_trial:
-        builder.row(InlineKeyboardButton(
-            text="🎁 Пробный период (7 дней — бесплатно)",
-            callback_data="plan_trial",
-        ))
+    # if not has_used_trial:
+    #     builder.row(InlineKeyboardButton(
+    #         text="🎁 Пробный период (7 дней — бесплатно)",
+    #         callback_data="plan_trial",
+    #     ))
 
     discounted = int(settings.PRICE_1_MONTH * (1 - settings.REFERRAL_DISCOUNT_PERCENT / 100))
     price_label = f"1 месяц — {discounted}₽ (скидка {settings.REFERRAL_DISCOUNT_PERCENT}%)" if has_discount else f"1 месяц — {settings.PRICE_1_MONTH}₽"
     builder.row(InlineKeyboardButton(
-        text=f"📅 {price_label}",
-        callback_data="plan_month",
+        # text=f"📅 {price_label}",
+        text=f"Покупка подписки временно недоступна.",
+        callback_data="plan_monthh",
     ))
 
     return builder.as_markup()
